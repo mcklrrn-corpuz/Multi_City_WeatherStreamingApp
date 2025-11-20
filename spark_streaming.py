@@ -49,3 +49,55 @@ query = json_df.writeStream \
     .start()
 
 query.awaitTermination()
+
+# 1. Windowed Aggregations
+from pyspark.sql.functions import window, avg, max, min, stddev, count
+
+windowed_df = json_df \
+    .withWatermark("timestamp", "10 minutes") \
+    .groupBy(
+        window("timestamp", "5 minutes"),
+        "location"
+    ) \
+    .agg(
+        avg("temperature_c").alias("avg_temp"),
+        max("temperature_c").alias("max_temp"),
+        min("temperature_c").alias("min_temp"),
+        stddev("temperature_c").alias("temp_stddev"),
+        avg("humidity").alias("avg_humidity"),
+        avg("pressure_mb").alias("avg_pressure"),
+        count("*").alias("reading_count")
+    )
+
+# 2. Anomaly Detection Stream
+anomalies_df = json_df.filter(
+    (col("temperature_c") > 40) | 
+    (col("temperature_c") < -5) |
+    (col("humidity") > 95) |
+    (col("pressure_mb") < 980)
+).withColumn("alert_type", 
+    when(col("temperature_c") > 40, "HIGH_TEMP")
+    .when(col("temperature_c") < -5, "LOW_TEMP")
+    .when(col("humidity") > 95, "HIGH_HUMIDITY")
+    .when(col("pressure_mb") < 980, "LOW_PRESSURE")
+)
+
+# 3. Multiple Sinks
+# Raw data
+json_df.writeStream \
+    .format("mongodb") \
+    .option("collection", "Readings") \
+    .start()
+
+# Aggregated data
+windowed_df.writeStream \
+    .format("mongodb") \
+    .option("collection", "WindowedStats") \
+    .start()
+
+# Alerts
+anomalies_df.writeStream \
+    .format("mongodb") \
+    .option("collection", "Alerts") \
+    .start()
+
