@@ -297,6 +297,11 @@ class StreamingDataProducer:
                 
                 # Generate and send data
                 data = self.generate_sample_data()
+
+                if data is None:
+                    print("Skipping message due to invalid weather data")
+                    continue
+
                 success = self.send_message(data)
                 
                 if success:
